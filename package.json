@@ -1,0 +1,24 @@
+{
+    "name": "ai-scouting-paprika",
+    "version": "1.0.0",
+    "description": "AI-powered startup and accelerator scouting tool for Google Sheets",
+    "scripts": {
+        "push": "clasp push",
+        "pull": "clasp pull",
+        "open": "clasp open",
+        "deploy": "clasp deploy"
+    },
+    "keywords": [
+        "apps-script",
+        "google-sheets",
+        "startup-scouting",
+        "ai",
+        "openai"
+    ],
+    "author": "Filippo Polidori",
+    "license": "MIT",
+    "devDependencies": {
+        "@google/clasp": "^2.4.2",
+        "@types/google-apps-script": "^1.0.0"
+    }
+}

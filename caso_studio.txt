@@ -1,0 +1,48 @@
+Caso studio – AI Scouting (Google Sheets + Apps Script)
+Obiettivo
+Costruire un prototipo che automatizzi lo scouting di acceleratori e startup in Europa e generi una value proposition sintetica per le startup, usando Google Sheets + Apps Script (e un LLM via API).
+Struttura del Google Sheet
+Il file deve contenere 2 schede:
+1) accelerators
+Colonne minime:
+	•	website (chiave univoca consigliata)
+	•	name
+	•	country
+2) startups
+Colonne minime:
+	•	website (chiave univoca consigliata)
+	•	name
+	•	country
+	•	accelerator (riferimento all’acceleratore, idealmente tramite website)
+	•	value_proposition (testo)
+Suggerimento: usa website come chiave primaria e rendi il sistema idempotente (niente duplicati).
+Cosa realizzare (libertà di approccio)
+In Apps Script aggiungi un menu personalizzato (es. “Startup Scouting AI”) con 3 azioni:
+	•	Scouting accelerators Aggiunge in accelerators nuovi acceleratori europei (batch piccolo, es. 10).
+	•	Aggiorna startups dagli acceleratori Per ogni acceleratore, cerca nel sto web le startup associate (portfolio/alumni/batch ecc.) e aggiunge in startups eventuali nuove voci.
+	•	Genera value proposition mancanti Per le startup senza value_proposition, visita il sito e genera una frase con schema: Startup <X> helps <Target Y> do <What W> so that <Benefit Z>
+Fonti, euristiche, parsing e provider LLM sono lasciati a te: ci interessa vedere come ragioni e come rendi la soluzione robusta.
+Vincoli minimi
+	•	Niente duplicati (match per website)
+	•	API key/secret gestite in modo sicuro (es. PropertiesService)
+	•	Logging e gestione errori sensati (skip + log, senza bloccare l’intero processo)
+Deliverable (cosa consegnare)
+Alla fine del lavoro, condividi:
+	•	Accesso al Google Sheet contenente i due tab e i dati generati
+	•	Accesso a un repository Git con:
+	•	codice Apps Script (consigliato: setup versionabile via clasp)
+	•	README.md con:
+	•	link allo Sheet
+	•	istruzioni di setup (chiavi API, configurazione)
+	•	come eseguire i 3 comandi dal menu
+	•	assunzioni/limiti del prototipo
+Puoi condividere il tutto via mail a recruiting@paprika.social, inserendo in oggetto: Candidatura AI Engineer). Deadline: sabato 31 gennaio 2026.
+Come valutiamo
+Dato che i vincoli sono volutamente leggeri, valutiamo soprattutto:
+	•	Problem solving & autonomia: scelte tecniche motivate, trade-off chiari
+	•	Qualità del dato: dedup, normalizzazione URL, coerenza tra tabelle
+	•	Robustezza: gestione dei casi “sporchi” (pagine non strutturate, siti non raggiungibili, ecc.)
+	•	Pulizia del codice: modularità, leggibilità, semplicità di estensione
+	•	Approccio AI: prompt, minimizzazione delle allucinazioni, output coerente
+	•	Operatività: configurazione, ripetibilità, idempotenza
+	•	Qualità della documentazione (README): chiarezza, completezza, istruzioni riproducibili, assunzioni/limiti esplicitati

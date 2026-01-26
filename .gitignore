@@ -1,0 +1,16 @@
+# Apps Script
+.clasp.json
+
+# Secrets
+*.secret
+.env
+
+# Dependencies
+node_modules/
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
