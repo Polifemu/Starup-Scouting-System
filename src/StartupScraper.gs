@@ -1,221 +1,142 @@
 /**
  * Startup Scraper Module
- * Extracts startups from accelerator websites
+ * Discovers startups by visiting Accelerator websites
  */
 
 const StartupScraper = {
   /**
-   * Common patterns for portfolio/alumni pages
+   * Discover startups by scraping accelerator websites
+   * @param {number} limit - Max number of accelerators to process per run
    */
-  PORTFOLIO_PATTERNS: [
-    '/portfolio', '/companies', '/startups', '/alumni',
-    '/investments', '/ventures', '/ecosystem'
-  ],
-  
-  /**
-   * Update startups from all accelerators
-   * @returns {Object} Results summary
-   */
-  updateStartupsFromAccelerators: function() {
-    Logger.info('StartupScraper', 'Starting startup update from accelerators');
-    
-    const results = {
-      acceleratorsProcessed: 0,
-      startupsFound: 0,
-      startupsAdded: 0,
-      startupsFailed: 0,
-      acceleratorsFailed: 0
-    };
+  updateStartupsFromAccelerators: function(limit = 3) {
+    Logger.info('StartupScraper', 'Inizio scouting dai siti degli acceleratori');
+    const results = { acceleratorsProcessed: 0, startupsAdded: 0, startupsFailed: 0 };
     
     try {
+      // 1. Get Accelerators
       const accelerators = SheetManager.getAllAccelerators();
-      Logger.info('StartupScraper', `Found ${accelerators.length} accelerators to process`);
+      if (accelerators.length === 0) {
+        Logger.warning('StartupScraper', 'Nessun acceleratore trovato nel database.');
+        return results;
+      }
       
-      for (const accelerator of accelerators) {
+      // Randomize to vary scraping targets or pick first N
+      // Use random sort to avoid getting stuck on the same ones if time limits hit
+      const targetAccelerators = accelerators.sort(() => 0.5 - Math.random()).slice(0, limit);
+      
+      for (const accelerator of targetAccelerators) {
         try {
-          const startups = this.scrapeStartupsFromAccelerator(accelerator);
-          results.acceleratorsProcessed++;
-          results.startupsFound += startups.length;
+          Logger.info('StartupScraper', `Scraping sito: ${accelerator.name} (${accelerator.website})`);
           
-          // Add startups to sheet
-          for (const startup of startups) {
-            if (SheetManager.addStartup(startup)) {
-              results.startupsAdded++;
-            } else {
-              results.startupsFailed++;
-            }
+          const foundStartups = this.scrapeAcceleratorSite(accelerator);
+          
+          if (foundStartups.length > 0) {
+            results.acceleratorsProcessed++;
+            Logger.info('StartupScraper', `Trovate ${foundStartups.length} startup per ${accelerator.name}`);
             
-            // Small delay between operations
-            Utilities.sleep(100);
+            for (const startup of foundStartups) {
+              if (SheetManager.addStartup(startup)) {
+                results.startupsAdded++;
+              } else {
+                results.startupsFailed++;
+              }
+            }
+          } else {
+             Logger.info('StartupScraper', `Nessuna startup trovata su ${accelerator.name} (o sito non accessibile)`);
           }
-          
-          // Delay between accelerators
+           
+          // Respect API/Scraping etiquette
           Utilities.sleep(CONFIG.SCRAPING_DELAY_MS);
           
         } catch (e) {
-          Logger.error('StartupScraper', 'Failed to process accelerator', {
-            accelerator: accelerator.name,
-            error: e.message
-          });
-          results.acceleratorsFailed++;
+          Logger.error('StartupScraper', `Errore processando ${accelerator.name}`, { error: e.toString() });
         }
       }
       
-      Logger.info('StartupScraper', 'Startup update completed', results);
+      SheetManager.optimizeSheet(CONFIG.SHEET_STARTUPS);
       return results;
       
     } catch (e) {
-      Logger.error('StartupScraper', 'Fatal error in startup update', {error: e.message});
+      Logger.error('StartupScraper', 'Errore generale scouting', {error: e.message});
       throw e;
     }
   },
   
   /**
-   * Scrape startups from a specific accelerator
-   * @param {Object} accelerator - Accelerator object
-   * @returns {Array<Object>} Array of startup objects
+   * Visit accelerator site and use AI to extract startups
    */
-  scrapeStartupsFromAccelerator: function(accelerator) {
-    Logger.info('StartupScraper', `Scraping startups from ${accelerator.name}`);
-    const startups = [];
-    
+  scrapeAcceleratorSite: function(accelerator) {
     try {
-      // Try to find portfolio page
-      const portfolioUrl = this.findPortfolioPage(accelerator.website);
-      
-      if (!portfolioUrl) {
-        Logger.warning('StartupScraper', 'Could not find portfolio page', {
-          accelerator: accelerator.name
-        });
-        return startups;
-      }
-      
-      // Fetch portfolio page content
-      const response = fetchWebContent(portfolioUrl);
-      
+      // 1. Fetch Content
+      const response = fetchWebContent(accelerator.website);
       if (!response.success) {
-        Logger.warning('StartupScraper', 'Failed to fetch portfolio page', {
-          url: portfolioUrl,
-          error: response.error
-        });
-        return startups;
+        Logger.warning('StartupScraper', `Sito irraggiungibile: ${accelerator.website}`, { status: response.statusCode });
+        return [];
       }
       
-      // Extract startup URLs from the page
-      const companyUrls = this.extractCompanyUrls(response.content, accelerator.website);
-      Logger.info('StartupScraper', `Found ${companyUrls.length} potential startup URLs`, {
-        accelerator: accelerator.name
-      });
+      // 2. Extract Text & Links
+      // We pass a generous amount of text to the LLM
+      const text = extractTextFromHtml(response.content, 15000); 
+      if (!text || text.length < 100) return [];
       
-      // Limit to avoid very long processing times
-      const limitedUrls = companyUrls.slice(0, CONFIG.STARTUPS_PER_ACCELERATOR);
+      // 3. Ask AI to identify startups
+      const apiKey = getApiKey();
       
-      for (const url of limitedUrls) {
-        try {
-          const startup = {
-            website: normalizeUrl(url),
-            name: this.extractCompanyName(url),
-            country: accelerator.country,
-            accelerator: accelerator.website,
-            value_proposition: ''
-          };
-          
-          startups.push(startup);
-          
-        } catch (e) {
-          Logger.warning('StartupScraper', 'Failed to process startup URL', {
-            url: url,
-            error: e.message
-          });
-        }
+      const prompt = `You are a data extraction engine. 
+      Analyze the text below from the website of "${accelerator.name}".
+      Identify startups that are part of their portfolio/batch/alumni.
+      
+      Return a JSON array of objects:
+      [{"name": "Startup Name", "website": "https://startup.com", "sector": "Sector", "description": "Short description"}]
+      
+      Rules:
+      - Only include companies that look like startups.
+      - Try to find their website URL if present in the text (or infer it if obvious, otherwise leave empty).
+      - If no startups are found, return [].
+      - Output ONLY JSON.
+      
+      TEXT:
+      ${text.substring(0, 12000)}`; // Truncate to avoid token limits
+      
+      const payload = {
+        model: CONFIG.LLM_MODEL,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.1
+      };
+      
+      const options = {
+        method: 'post',
+        contentType: 'application/json',
+        headers: { 'Authorization': 'Bearer ' + apiKey },
+        payload: JSON.stringify(payload),
+        muteHttpExceptions: true
+      };
+      
+      const llmRes = UrlFetchApp.fetch(CONFIG.LLM_ENDPOINT, options);
+      if (llmRes.getResponseCode() !== 200) {
+        Logger.error('StartupScraper', 'Errore LLM', { body: llmRes.getContentText() });
+        return [];
       }
+      
+      // 4. Parse Response
+      const body = llmRes.getContentText();
+      const cleaned = body.replace(/```json|```/g, '').trim();
+      const jsonMatch = cleaned.match(/\[[\s\S]*\]/);
+      
+      if (!jsonMatch) return [];
+      
+      const startups = JSON.parse(jsonMatch[0]);
+      
+      // 5. Post-process
+      return startups.map(s => ({
+        ...s,
+        accelerator: accelerator.name, // Link to the accelerator
+        website: normalizeUrl(s.website)
+      })).filter(s => s.name && s.name.length > 1);
       
     } catch (e) {
-      Logger.error('StartupScraper', 'Error scraping accelerator', {
-        accelerator: accelerator.name,
-        error: e.message
-      });
+      Logger.error('StartupScraper', `Errore scraping ${accelerator.name}`, { error: e.toString() });
+      return [];
     }
-    
-    return startups;
-  },
-  
-  /**
-   * Try to find the portfolio/companies page
-   * @param {string} baseUrl - Accelerator base URL
-   * @returns {string|null} Portfolio page URL or null
-   */
-  findPortfolioPage: function(baseUrl) {
-    // Try common portfolio page patterns
-    for (const pattern of this.PORTFOLIO_PATTERNS) {
-      const testUrl = normalizeUrl(baseUrl) + pattern;
-      
-      try {
-        const response = fetchWebContent(testUrl, {retries: 0});
-        if (response.success) {
-          Logger.info('StartupScraper', 'Found portfolio page', {url: testUrl});
-          return testUrl;
-        }
-      } catch (e) {
-        // Continue to next pattern
-      }
-    }
-    
-    // Fallback to base URL
-    Logger.info('StartupScraper', 'Using base URL as fallback', {url: baseUrl});
-    return baseUrl;
-  },
-  
-  /**
-   * Extract company URLs from HTML content
-   * @param {string} html - HTML content
-   * @param {string} baseUrl - Base URL for context
-   * @returns {Array<string>} Array of company URLs
-   */
-  extractCompanyUrls: function(html, baseUrl) {
-    const urls = extractUrlsFromHtml(html);
-    const companyUrls = [];
-    const baseDomain = getDomain(baseUrl);
-    
-    for (const url of urls) {
-      let fullUrl = url;
-      
-      // Convert relative URLs to absolute
-      if (url.startsWith('/')) {
-        fullUrl = normalizeUrl(baseUrl).replace(/\/$/, '') + url;
-      } else if (!url.startsWith('http')) {
-        continue;
-      }
-      
-      // Skip URLs that are part of the accelerator's own domain
-      if (getDomain(fullUrl) === baseDomain) {
-        continue;
-      }
-      
-      // Only keep likely company websites
-      if (isLikelyCompanyWebsite(fullUrl) && isValidUrl(fullUrl)) {
-        companyUrls.push(fullUrl);
-      }
-    }
-    
-    // Remove duplicates
-    return [...new Set(companyUrls)];
-  },
-  
-  /**
-   * Extract company name from URL
-   * @param {string} url - Company URL
-   * @returns {string} Extracted company name
-   */
-  extractCompanyName: function(url) {
-    const domain = getDomain(url);
-    
-    // Remove TLD
-    const name = domain.replace(/\.(com|io|co|ai|net|org|app|tech|dev)$/i, '');
-    
-    // Capitalize first letter of each word
-    return name.split(/[-.]/)
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
   }
 };

@@ -18,9 +18,9 @@ Colonne minime:
 Suggerimento: usa website come chiave primaria e rendi il sistema idempotente (niente duplicati).
 Cosa realizzare (libertà di approccio)
 In Apps Script aggiungi un menu personalizzato (es. “Startup Scouting AI”) con 3 azioni:
-	•	Scouting accelerators Aggiunge in accelerators nuovi acceleratori europei (batch piccolo, es. 10).
-	•	Aggiorna startups dagli acceleratori Per ogni acceleratore, cerca nel sto web le startup associate (portfolio/alumni/batch ecc.) e aggiunge in startups eventuali nuove voci.
-	•	Genera value proposition mancanti Per le startup senza value_proposition, visita il sito e genera una frase con schema: Startup <X> helps <Target Y> do <What W> so that <Benefit Z>
+	•	Scouting acceleratorsAggiunge in accelerators nuovi acceleratori europei (batch piccolo, es. 10).
+	•	Aggiorna startups dagli acceleratoriPer ogni acceleratore, cerca nel sto web le startup associate (portfolio/alumni/batch ecc.) e aggiunge in startups eventuali nuove voci.
+	•	Genera value proposition mancantiPer le startup senza value_proposition, visita il sito e genera una frase con schema:Startup <X> helps <Target Y> do <What W> so that <Benefit Z>
 Fonti, euristiche, parsing e provider LLM sono lasciati a te: ci interessa vedere come ragioni e come rendi la soluzione robusta.
 Vincoli minimi
 	•	Niente duplicati (match per website)

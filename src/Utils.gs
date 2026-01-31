@@ -9,16 +9,19 @@
  * @returns {string} Normalized URL
  */
 function normalizeUrl(url) {
-  if (!url) return '';
+  if (url === null || url === undefined || url === '') return '';
+  
+  // Forza conversione in stringa se è un numero o altro
+  let urlStr = String(url).trim();
   
   try {
     // Add protocol if missing
-    if (!url.match(/^https?:\/\//i)) {
-      url = 'https://' + url;
+    if (!urlStr.match(/^https?:\/\//i)) {
+      urlStr = 'https://' + urlStr;
     }
     
     // Parse URL
-    let normalized = url.toLowerCase().trim();
+    let normalized = urlStr.toLowerCase();
     
     // Remove trailing slash
     normalized = normalized.replace(/\/$/, '');
@@ -29,7 +32,7 @@ function normalizeUrl(url) {
     return normalized;
   } catch (e) {
     Logger.warning('Utils', 'Failed to normalize URL', {url: url, error: e.message});
-    return url.toLowerCase().trim();
+    return String(url).toLowerCase().trim();
   }
 }
 
@@ -75,7 +78,8 @@ function fetchWebContent(url, options = {}) {
       const fetchOptions = {
         'muteHttpExceptions': true,
         'headers': {
-          'User-Agent': 'Mozilla/5.0 (compatible; ScoutingBot/1.0)'
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
         }
       };
       

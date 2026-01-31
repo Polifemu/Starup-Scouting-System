@@ -4,241 +4,239 @@
  */
 
 const SheetManager = {
-  /**
-   * Get or create a sheet with specified headers
-   * @param {string} name - Sheet name
-   * @param {Array<string>} headers - Column headers
-   * @returns {GoogleAppsScript.Spreadsheet.Sheet} The sheet
-   */
   getOrCreateSheet: function(name, headers) {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     let sheet = ss.getSheetByName(name);
-    
     if (!sheet) {
       sheet = ss.insertSheet(name);
-      if (headers && headers.length > 0) {
+      if (headers) {
         sheet.appendRow(headers);
         sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+        sheet.setFrozenRows(1);
       }
-      Logger.info('SheetManager', `Created new sheet: ${name}`);
     }
-    
     return sheet;
   },
   
-  /**
-   * Initialize all required sheets
-   */
   initializeSheets: function() {
-    this.getOrCreateSheet(CONFIG.SHEET_ACCELERATORS, ['website', 'name', 'country']);
-    this.getOrCreateSheet(CONFIG.SHEET_STARTUPS, ['website', 'name', 'country', 'accelerator', 'value_proposition']);
+    this.getOrCreateSheet(CONFIG.SHEET_ACCELERATORS, ['ID', 'Nome Acceleratore', 'Paese', 'Focus', 'URL', 'Descrizione']);
+    this.getOrCreateSheet(CONFIG.SHEET_STARTUPS, ['ID', 'Nome', 'Paese', 'Settore', 'URL', 'Descrizione', 'Acceleratore', 'Value Proposition']);
+    // this.getOrCreateSheet(CONFIG.SHEET_VALUE_PROPS, ['ID', 'Startup', 'Acceleratore', 'Match Score', 'Value proposition', 'Data generazione']);
     this.getOrCreateSheet(CONFIG.SHEET_LOGS, ['Timestamp', 'Level', 'Function', 'Message', 'Details']);
-    Logger.info('SheetManager', 'All sheets initialized');
+    Logger.info('SheetManager', 'Fogli inizializzati');
   },
   
-  /**
-   * Check if a URL already exists in a sheet
-   * @param {string} sheetName - Name of the sheet
-   * @param {string} url - URL to check
-   * @returns {number} Row number if exists, -1 otherwise
-   */
   findRowByUrl: function(sheetName, url) {
-    const sheet = this.getOrCreateSheet(sheetName, null);
+    if (!url) return -1;
+    const sheet = this.getOrCreateSheet(sheetName);
     const data = sheet.getDataRange().getValues();
     const normalizedUrl = normalizeUrl(url);
     
-    for (let i = 1; i < data.length; i++) { // Skip header row
-      if (normalizeUrl(data[i][0]) === normalizedUrl) {
-        return i + 1; // Return 1-based row number
+    // Both Startups and Accelerators now have URL in Column E (index 4)
+    const websiteCol = (sheetName === CONFIG.SHEET_ACCELERATORS) ? CONFIG.ACC_COL_WEBSITE : CONFIG.STARTUP_COL_WEBSITE;
+    
+    for (let i = 1; i < data.length; i++) {
+      const cellValue = data[i][websiteCol];
+      if (cellValue && typeof cellValue === 'string' && cellValue.includes('.')) {
+        if (normalizeUrl(cellValue) === normalizedUrl) return i + 1;
       }
     }
     
     return -1;
   },
   
-  /**
-   * Add or update an accelerator (idempotent)
-   * @param {Object} accelerator - {website, name, country}
-   * @returns {boolean} True if added/updated successfully
-   */
   addAccelerator: function(accelerator) {
     try {
-      if (!accelerator.website || !isValidUrl(accelerator.website)) {
-        Logger.warning('SheetManager', 'Invalid accelerator URL', accelerator);
-        return false;
-      }
+      if (!accelerator.website) return false;
+      const sheet = this.getOrCreateSheet(CONFIG.SHEET_ACCELERATORS);
+      const url = normalizeUrl(accelerator.website);
+      const row = this.findRowByUrl(CONFIG.SHEET_ACCELERATORS, url);
       
-      const sheet = this.getOrCreateSheet(CONFIG.SHEET_ACCELERATORS, ['website', 'name', 'country']);
-      const normalizedUrl = normalizeUrl(accelerator.website);
-      const existingRow = this.findRowByUrl(CONFIG.SHEET_ACCELERATORS, normalizedUrl);
+      const values = [
+        0, // Temporary
+        accelerator.name || '', 
+        accelerator.country || '', 
+        accelerator.focus || '', 
+        url, 
+        accelerator.description || ''
+      ];
       
-      if (existingRow > 0) {
-        // Update existing row
-        sheet.getRange(existingRow, 1, 1, 3).setValues([[
-          normalizedUrl,
-          accelerator.name || '',
-          accelerator.country || ''
-        ]]);
-        Logger.info('SheetManager', 'Updated accelerator', {website: normalizedUrl});
+      if (row > 0) {
+        values[0] = sheet.getRange(row, 1).getValue();
+        sheet.getRange(row, 1, 1, 6).setValues([values]);
+        Logger.info('SheetManager', 'Aggiornato acceleratore esistente', { name: accelerator.name });
       } else {
-        // Add new row
-        sheet.appendRow([
-          normalizedUrl,
-          accelerator.name || '',
-          accelerator.country || ''
-        ]);
-        Logger.info('SheetManager', 'Added new accelerator', {website: normalizedUrl});
+        sheet.appendRow(values);
+        Logger.info('SheetManager', 'Aggiunto nuovo acceleratore', { name: accelerator.name });
       }
       
+      this.optimizeSheet(CONFIG.SHEET_ACCELERATORS);
       return true;
     } catch (e) {
-      Logger.error('SheetManager', 'Failed to add accelerator', {error: e.message, accelerator: accelerator});
+      Logger.error('SheetManager', 'Fallito addAccelerator', { error: e.toString() });
       return false;
     }
   },
   
-  /**
-   * Add or update a startup (idempotent)
-   * @param {Object} startup - {website, name, country, accelerator, value_proposition}
-   * @returns {boolean} True if added/updated successfully
-   */
   addStartup: function(startup) {
     try {
-      if (!startup.website || !isValidUrl(startup.website)) {
-        Logger.warning('SheetManager', 'Invalid startup URL', startup);
-        return false;
-      }
+      if (!startup.website) return false;
+      const sheet = this.getOrCreateSheet(CONFIG.SHEET_STARTUPS);
+      const url = normalizeUrl(startup.website);
+      const row = this.findRowByUrl(CONFIG.SHEET_STARTUPS, url);
       
-      const sheet = this.getOrCreateSheet(CONFIG.SHEET_STARTUPS, 
-        ['website', 'name', 'country', 'accelerator', 'value_proposition']);
-      const normalizedUrl = normalizeUrl(startup.website);
-      const existingRow = this.findRowByUrl(CONFIG.SHEET_STARTUPS, normalizedUrl);
+      // ID, Nome, Paese, Settore, URL, Descrizione, Acceleratore, Value Proposition
+      const values = [
+        0, // Temporary ID, will be fixed by optimizeSheet
+        startup.name || '', 
+        startup.country || '', 
+        startup.sector || '', 
+        url, 
+        startup.description || '',
+        startup.accelerator || '',
+        startup.value_proposition || ''
+      ];
       
-      if (existingRow > 0) {
-        // Update existing row (but don't overwrite existing value_proposition)
-        const currentData = sheet.getRange(existingRow, 1, 1, 5).getValues()[0];
-        const valueProp = currentData[4] || startup.value_proposition || '';
-        
-        sheet.getRange(existingRow, 1, 1, 5).setValues([[
-          normalizedUrl,
-          startup.name || currentData[1] || '',
-          startup.country || currentData[2] || '',
-          startup.accelerator || currentData[3] || '',
-          valueProp
-        ]]);
-        Logger.info('SheetManager', 'Updated startup', {website: normalizedUrl});
+      if (row > 0) {
+        // Reuse old ID
+        values[0] = sheet.getRange(row, 1).getValue();
+        // Preserve existing VP if new one is empty
+        if (!values[7]) {
+           const existingVP = sheet.getRange(row, 8).getValue();
+           if (existingVP) values[7] = existingVP;
+        }
+        sheet.getRange(row, 1, 1, 8).setValues([values]);
+        Logger.info('SheetManager', 'Aggiornata startup esistente', { name: startup.name });
       } else {
-        // Add new row
-        sheet.appendRow([
-          normalizedUrl,
-          startup.name || '',
-          startup.country || '',
-          startup.accelerator || '',
-          startup.value_proposition || ''
-        ]);
-        Logger.info('SheetManager', 'Added new startup', {website: normalizedUrl});
+        sheet.appendRow(values);
+        Logger.info('SheetManager', 'Aggiunta nuova startup', { name: startup.name });
       }
       
+      this.optimizeSheet(CONFIG.SHEET_STARTUPS);
       return true;
     } catch (e) {
-      Logger.error('SheetManager', 'Failed to add startup', {error: e.message, startup: startup});
+      Logger.error('SheetManager', 'Fallito addStartup', { error: e.toString() });
       return false;
+    }
+  },
+
+  /**
+   * Optimize sheet: remove empty rows, remove duplicates by URL, and re-sequence IDs
+   */
+  optimizeSheet: function(sheetName) {
+    try {
+      const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+      if (!sheet) return;
+      
+      const data = sheet.getDataRange().getValues();
+      if (data.length <= 1) return;
+      
+      const headers = data[0];
+      const rows = data.slice(1);
+      
+      // 1. Filter out empty rows and duplicates
+      const seenUrls = new Set();
+      const cleanRows = [];
+      
+      // URL is in column E (index 4) for both sheets
+      const urlIndex = (sheetName === CONFIG.SHEET_ACCELERATORS) ? CONFIG.ACC_COL_WEBSITE : CONFIG.STARTUP_COL_WEBSITE;
+      
+      for (const row of rows) {
+        // Check if row is mostly empty
+        const isNonEmpty = row.some(cell => cell !== null && cell !== '');
+        if (!isNonEmpty) continue;
+        
+        const url = normalizeUrl(row[urlIndex]);
+        if (url && !seenUrls.has(url)) {
+          seenUrls.add(url);
+          cleanRows.push(row);
+        }
+      }
+      
+      // 2. Re-sequence IDs (Column A / index 0)
+      cleanRows.forEach((row, index) => {
+        row[0] = index + 1;
+      });
+      
+      // 3. Write back to sheet (Handling variable column width)
+      sheet.clearContents();
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      if (cleanRows.length > 0) {
+        sheet.getRange(2, 1, cleanRows.length, headers.length).setValues(cleanRows);
+      }
+      
+      Logger.info('SheetManager', `Ottimizzato foglio ${sheetName}`, { 
+        original: rows.length, 
+        optimized: cleanRows.length 
+      });
+    } catch (e) {
+      Logger.error('SheetManager', `Errore ottimizzazione ${sheetName}`, { error: e.toString() });
     }
   },
   
   /**
-   * Update value proposition for a startup
-   * @param {string} website - Startup website URL
-   * @param {string} valueProp - Value proposition text
-   * @returns {boolean} True if updated successfully
+   * Update the Value Proposition for a specific startup
    */
-  updateValueProposition: function(website, valueProp) {
+  updateStartupValueProp: function(website, valueProp) {
     try {
-      const sheet = this.getOrCreateSheet(CONFIG.SHEET_STARTUPS, null);
+      const sheet = this.getOrCreateSheet(CONFIG.SHEET_STARTUPS);
       const row = this.findRowByUrl(CONFIG.SHEET_STARTUPS, website);
       
       if (row > 0) {
-        sheet.getRange(row, CONFIG.STARTUP_COL_VALUE_PROP + 1).setValue(valueProp);
-        Logger.info('SheetManager', 'Updated value proposition', {website: normalizeUrl(website)});
+        // Column H (index 8, 1-based) is Value Proposition. 
+        // CONFIG.STARTUP_COL_VALUE_PROP is 7 (0-based) -> Column 8
+        sheet.getRange(row, 8).setValue(valueProp);
+        Logger.info('SheetManager', 'VP salvata su Startup', { website });
         return true;
-      } else {
-        Logger.warning('SheetManager', 'Startup not found for value prop update', {website: website});
-        return false;
       }
+      return false;
     } catch (e) {
-      Logger.error('SheetManager', 'Failed to update value proposition', {error: e.message, website: website});
+      Logger.error('SheetManager', 'Errore updateStartupValueProp', { error: e.toString() });
       return false;
     }
   },
+
+  addValueProposition: function(vpData) {
+     // DEPRECATED COMPATIBILITY WRAPPER
+     // If possible, map to updateStartupValueProp
+     // Look up website by name? It's risky. Better to rely on new flow.
+     Logger.warning('SheetManager', 'addValueProposition è deprecato. Uso updateStartupValueProp se possibile.');
+     return false; 
+  },
+
+  updateValueProposition: function(website, valueProp) {
+    return this.updateStartupValueProp(website, valueProp);
+  },
   
-  /**
-   * Get all accelerators
-   * @returns {Array<Object>} Array of accelerator objects
-   */
   getAllAccelerators: function() {
-    try {
-      const sheet = this.getOrCreateSheet(CONFIG.SHEET_ACCELERATORS, ['website', 'name', 'country']);
-      const data = sheet.getDataRange().getValues();
-      const accelerators = [];
-      
-      for (let i = 1; i < data.length; i++) { // Skip header
-        if (data[i][0]) { // Has website
-          accelerators.push({
-            website: data[i][0],
-            name: data[i][1],
-            country: data[i][2]
-          });
-        }
-      }
-      
-      return accelerators;
-    } catch (e) {
-      Logger.error('SheetManager', 'Failed to get accelerators', {error: e.message});
-      return [];
-    }
+    const data = this.getOrCreateSheet(CONFIG.SHEET_ACCELERATORS).getDataRange().getValues();
+    return data.slice(1).map(r => ({ 
+      website: r[CONFIG.ACC_COL_WEBSITE], 
+      name: r[CONFIG.ACC_COL_NAME], 
+      country: r[CONFIG.ACC_COL_COUNTRY],
+      focus: r[CONFIG.ACC_COL_FOCUS],
+      description: r[CONFIG.ACC_COL_DESCRIPTION]
+    })).filter(r => r.website);
   },
   
-  /**
-   * Get startups without value propositions
-   * @returns {Array<Object>} Array of startup objects
-   */
   getStartupsWithoutValueProp: function() {
-    try {
-      const sheet = this.getOrCreateSheet(CONFIG.SHEET_STARTUPS, null);
-      const data = sheet.getDataRange().getValues();
-      const startups = [];
-      
-      for (let i = 1; i < data.length; i++) { // Skip header
-        const valueProp = data[i][CONFIG.STARTUP_COL_VALUE_PROP];
-        if (data[i][0] && (!valueProp || valueProp.trim() === '')) {
-          startups.push({
-            website: data[i][0],
-            name: data[i][1],
-            country: data[i][2],
-            accelerator: data[i][3]
-          });
-        }
-      }
-      
-      return startups;
-    } catch (e) {
-      Logger.error('SheetManager', 'Failed to get startups without value prop', {error: e.message});
-      return [];
-    }
+    const data = this.getOrCreateSheet(CONFIG.SHEET_STARTUPS).getDataRange().getValues();
+    // Headers are row 0. Data starts row 1.
+    // Column H (index 7) is VP.
+    return data.slice(1).map((r, i) => ({
+      rowIndex: i + 2, // 1-based index in sheet
+      website: r[CONFIG.STARTUP_COL_WEBSITE], 
+      name: r[CONFIG.STARTUP_COL_NAME], 
+      country: r[CONFIG.STARTUP_COL_COUNTRY],
+      sector: r[CONFIG.STARTUP_COL_SECTOR],
+      description: r[CONFIG.STARTUP_COL_DESCRIPTION],
+      accelerator: r[CONFIG.STARTUP_COL_ACCELERATOR],
+      value_proposition: r[7] // Hardcoded for now based on array index
+    })).filter(r => r.website && (!r.value_proposition || r.value_proposition === ''));
   },
   
-  /**
-   * Get count of records in a sheet
-   * @param {string} sheetName - Name of the sheet
-   * @returns {number} Number of records (excluding header)
-   */
-  getRecordCount: function(sheetName) {
-    try {
-      const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
-      if (!sheet) return 0;
-      return Math.max(0, sheet.getLastRow() - 1); // Exclude header
-    } catch (e) {
-      return 0;
-    }
+  getRecordCount: function(name) {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+    return sheet ? Math.max(0, sheet.getLastRow() - 1) : 0;
   }
 };

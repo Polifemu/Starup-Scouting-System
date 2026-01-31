@@ -1,118 +1,97 @@
-/**
- * Accelerator Scouting Module
- * Discovers and adds European accelerators to the database
- */
-
 const AcceleratorScouting = {
-  /**
-   * Scout accelerators and add them to the sheet
-   * @param {number} batchSize - Number of accelerators to add
-   * @returns {Object} Results summary
-   */
-  scoutAccelerators: function(batchSize = CONFIG.ACCELERATORS_BATCH_SIZE) {
-    Logger.info('AcceleratorScouting', `Starting accelerator scouting (batch: ${batchSize})`);
-    
-    const results = {
-      success: 0,
-      skipped: 0,
-      failed: 0,
-      total: 0
-    };
+  scoutAccelerators: function(batchSize = 5) {
+    const ui = SpreadsheetApp.getUi();
+    const results = { success: 0, skipped: 0, failed: 0, total: 0 };
     
     try {
-      // Initialize sheets if needed
       SheetManager.initializeSheets();
       
-      // Get seed accelerators
-      const seedAccelerators = CONFIG.SEED_ACCELERATORS.slice(0, batchSize);
+      // Step 1: Chiamata AI
+      ui.alert('🛠 Debug: Chiedo all\'AI di trovare acceleratori...');
+      const newAccelerators = this.scoutWithAI(batchSize);
       
-      for (const accelerator of seedAccelerators) {
+      if (!newAccelerators || newAccelerators.length === 0) {
+        ui.alert('❌ Debug: L\'IA non ha restituito nessun acceleratore valido.');
+        return results;
+      }
+      
+      ui.alert('✅ Debug: Trovati ' + newAccelerators.length + ' acceleratori. Inizio a scriverli...');
+      
+      for (const accelerator of newAccelerators) {
         results.total++;
-        
         try {
-          // Check if already exists
           if (SheetManager.findRowByUrl(CONFIG.SHEET_ACCELERATORS, accelerator.website) > 0) {
-            Logger.info('AcceleratorScouting', 'Accelerator already exists, skipping', {name: accelerator.name});
             results.skipped++;
             continue;
           }
           
-          // Add to sheet
           if (SheetManager.addAccelerator(accelerator)) {
             results.success++;
-            Logger.info('AcceleratorScouting', 'Successfully added accelerator', {name: accelerator.name});
           } else {
             results.failed++;
           }
-          
-          // Small delay to avoid rate limiting
-          Utilities.sleep(CONFIG.SCRAPING_DELAY_MS);
-          
         } catch (e) {
-          Logger.error('AcceleratorScouting', 'Error processing accelerator', {
-            name: accelerator.name,
-            error: e.message
-          });
           results.failed++;
         }
       }
       
-      Logger.info('AcceleratorScouting', 'Scouting completed', results);
       return results;
-      
     } catch (e) {
-      Logger.error('AcceleratorScouting', 'Fatal error in scouting', {error: e.message});
+      ui.alert('❌ ERRORE CRITICO: ' + e.toString());
       throw e;
     }
   },
-  
-  /**
-   * Add custom accelerator manually
-   * @param {string} website - Accelerator website
-   * @param {string} name - Accelerator name
-   * @param {string} country - Country
-   * @returns {boolean} Success status
-   */
-  addCustomAccelerator: function(website, name, country) {
+
+  scoutWithAI: function(limit) {
     try {
-      if (!isValidUrl(website)) {
-        Logger.error('AcceleratorScouting', 'Invalid URL provided', {website: website});
-        return false;
-      }
+      const apiKey = getApiKey();
+      // Prompt semplificato al massimo per evitare errori di parsing
+      const prompt = `LIST 5 STARTUP ACCELERATORS IN EUROPE. 
+      Output ONLY a JSON array. No text before or after.
+      Format: [{"name": "Name", "website": "https://url.com", "country": "Country", "focus": "Tech/Biotech/etc", "description": "Brief description"}]`;
       
-      const accelerator = {
-        website: website,
-        name: name || getDomain(website),
-        country: country || 'Unknown'
+      const payload = {
+        model: CONFIG.LLM_MODEL,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.1
       };
       
-      const result = SheetManager.addAccelerator(accelerator);
+      const options = {
+        method: 'post',
+        contentType: 'application/json',
+        headers: { 'Authorization': 'Bearer ' + apiKey },
+        payload: JSON.stringify(payload),
+        muteHttpExceptions: true
+      };
       
-      if (result) {
-        Logger.info('AcceleratorScouting', 'Manually added accelerator', accelerator);
+      const response = UrlFetchApp.fetch(CONFIG.LLM_ENDPOINT, options);
+      const code = response.getResponseCode();
+      const body = response.getContentText();
+      
+      if (code !== 200) {
+        throw new Error('Groq API Error (' + code + '): ' + body);
       }
       
-      return result;
+      const jsonResponse = JSON.parse(body);
+      let content = jsonResponse.choices[0].message.content.trim();
+      
+      // Pulizia aggressiva del contenuto
+      content = content.replace(/```json/g, '').replace(/```/g, '').trim();
+      
+      const start = content.indexOf('[');
+      const end = content.lastIndexOf(']');
+      
+      if (start === -1 || end === -1) {
+        Logger.error('AcceleratorScouting', 'JSON non trovato nel testo AI', { text: content });
+        return [];
+      }
+      
+      const jsonStr = content.substring(start, end + 1);
+      return JSON.parse(jsonStr);
+      
     } catch (e) {
-      Logger.error('AcceleratorScouting', 'Failed to add custom accelerator', {
-        error: e.message,
-        website: website
-      });
-      return false;
-    }
-  },
-  
-  /**
-   * Verify accelerator website is accessible
-   * @param {string} url - Accelerator URL
-   * @returns {boolean} True if accessible
-   */
-  verifyAcceleratorAccess: function(url) {
-    try {
-      const response = fetchWebContent(url);
-      return response.success;
-    } catch (e) {
-      return false;
+      Logger.error('AcceleratorScouting', 'scoutWithAI failed', { error: e.toString() });
+      throw e;
     }
   }
 };
