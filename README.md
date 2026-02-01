@@ -61,7 +61,18 @@ Per sicurezza, questo progetto usa le **Script Properties** come variabili d'amb
     - **Valore:** La tua chiave Groq (es. `gsk_...`)
 4. Salva.
 
-> 📄 Vedi [SETUP_API_KEY.md](./SETUP_API_KEY.md) per istruzioni dettagliate.
+> **Nota importante:** Per sicurezza, **non scrivere la API Key nel codice**.
+> Usa invece i **Script Properties** di Google Apps Script, che funzionano come un file `.env`.
+>
+> **Procedura:**
+>
+> 1. In Apps Script, vai su **Impostazioni del progetto** (icona ingranaggio a sinistra).
+> 2. Scorri fino a **Proprietà script**.
+> 3. Clicca su **Aggiungi proprietà script**.
+> 4. Inserisci:
+>    - **Proprietà:** `GROQ_API_KEY`
+>    - **Valore:** `gsk_...` (la tua chiave Groq)
+> 5. Clicca su **Salva proprietà script**.
 
 ## 📖 Utilizzo
 
@@ -75,6 +86,7 @@ Per sicurezza, questo progetto usa le **Script Properties** come variabili d'amb
 ## 📊 Struttura Dati
 
 Il sistema crea due fogli principali:
+
 - **Database Acceleratori**: Lista degli acceleratori monitorati.
 - **Database Startup**: Lista delle startup trovate, con colonna dedicata per la **Value Proposition**.
 
