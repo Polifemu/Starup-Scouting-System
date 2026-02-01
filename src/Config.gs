@@ -72,25 +72,27 @@ const CONFIG = {
  * @returns {string} API key
  */
 function getApiKey() {
-  // First try Config sheet (B1 as per user's script)
+  // 1. Priority: Script Properties (Environment Variables)
+  // This is the secure, best-practice way to store secrets in Apps Script
+  const scriptKey = PropertiesService.getScriptProperties().getProperty('GROQ_API_KEY');
+  if (scriptKey) return scriptKey;
+
+  // 2. Fallback: Config Sheet (Legacy/Easy Setup)
+  // Useful for users who cannot access Project Settings
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const configSheet = ss.getSheetByName(CONFIG.SHEET_CONFIG);
     if (configSheet) {
-      const keyValue = configSheet.getRange("B1").getValue();
-      if (keyValue && String(keyValue).trim().length > 20) {
-        // Logger.info('Config', 'API Key letta dal foglio Config');
-        return String(keyValue).trim();
+      const cellKey = configSheet.getRange("B1").getValue();
+      if (cellKey && String(cellKey).trim().length > 20) {
+        return String(cellKey).trim();
       }
     }
-  } catch (e) {}
-
-  // Fallback to script properties
-  const key = PropertiesService.getScriptProperties().getProperty('GROQ_API_KEY');
-  if (!key) {
-    throw new Error('API Key NON trovata! Inseriscila nel foglio Config cella B1.');
+  } catch (e) {
+    Logger.warning('Config', 'Error reading Config sheet', {error: e.message});
   }
-  return key;
+
+  throw new Error('API Key mancante! Imposta "GROQ_API_KEY" nei Project Properties (File > Project Properties > Script Properties) o in cella B1 del foglio Config.');
 }
 
 /**
